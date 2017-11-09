@@ -16,7 +16,7 @@
          receive_message/1, receive_message/2, receive_message/3, receive_message/4,
          receive_message/5, receive_message/6, receive_message/7,
          remove_permission/2, remove_permission/3,
-         send_message/2, send_message/3, send_message/4, send_message/5,
+         send_message/2, send_message/3, send_message/4, send_message/6,
          set_queue_attributes/2, set_queue_attributes/3,
          send_message_batch/2, send_message_batch/3, send_message_batch/4,
          delete_message_batch/2, delete_message_batch/3,
@@ -417,22 +417,29 @@ send_message(QueueName, MessageBody) ->
 send_message(QueueName, MessageBody, Config)
   when is_record(Config, aws_config) ->
     send_message(QueueName, MessageBody, none, Config);
+send_message(QueueName, MessageBody, GroupId)
+  when is_list(GroupId) ->
+    send_message(QueueName, MessageBody, GroupId, none, [], default_config());
 send_message(QueueName, MessageBody, DelaySeconds) ->
     send_message(QueueName, MessageBody, DelaySeconds, default_config()).
 
 -spec send_message(string(), string(), 0..900 | none, aws_config()) -> proplist().
 send_message(QueueName, MessageBody, DelaySeconds, Config) ->
-    send_message(QueueName, MessageBody, DelaySeconds, [], Config).
+    send_message(QueueName, MessageBody, none, DelaySeconds, [], Config).
 
--spec send_message(string(), string(), 0..900 | none, [message_attribute()], aws_config()) -> proplist().
-send_message(QueueName, MessageBody, DelaySeconds, MessageAttributes, Config)
-  when is_list(QueueName), is_list(MessageBody), is_record(Config, aws_config),
-       (DelaySeconds >= 0 andalso DelaySeconds =< 900) orelse
-       DelaySeconds =:= none andalso is_list(MessageAttributes) ->
+-spec send_message(string(), string(), string() | none, 0..900 | none, [message_attribute()], aws_config()) -> proplist().
+send_message(QueueName, MessageBody, GroupId, DelaySeconds, MessageAttributes, Config)
+  when is_list(QueueName),
+       is_list(MessageBody),
+       is_list(MessageAttributes),
+       is_record(Config, aws_config),
+       is_list(GroupId) orelse GroupId =:= none,
+       (DelaySeconds >= 0 andalso DelaySeconds =< 900) orelse DelaySeconds =:= none
+->
     EncodedMessageAttributes = encode_message_attributes(MessageAttributes),
-    Doc = sqs_xml_request(Config, QueueName, "SendMessage",
-                          [{"MessageBody", MessageBody},
-                           {"DelaySeconds", DelaySeconds} | EncodedMessageAttributes]),
+    Parameters = create_send_parameters(MessageBody, GroupId, DelaySeconds, EncodedMessageAttributes),
+    Doc = sqs_xml_request(Config, QueueName, "SendMessage", Parameters),
+
     erlcloud_xml:decode(
       [
        {message_id, "SendMessageResult/MessageId", text},
@@ -440,6 +447,20 @@ send_message(QueueName, MessageBody, DelaySeconds, MessageAttributes, Config)
       ],
       Doc
      ).
+
+
+create_send_parameters(MessageBody, GroupId, DelaySeconds, EncodedMessageAttributes)
+  when GroupId =:= none ->
+    [
+     {"MessageBody", MessageBody},
+     {"Delayseconds", DelaySeconds} | EncodedMessageAttributes
+    ];
+create_send_parameters(MessageBody, GroupId, DelaySeconds, EncodedMessageAttributes) ->
+    [
+     {"MessageBody", MessageBody},
+     {"MessageGroupId", GroupId},
+     {"Delayseconds", DelaySeconds} | EncodedMessageAttributes
+    ].
 
 -spec set_queue_attributes(string(), [{visibility_timeout, integer()} | {policy, string()|binary()}]) -> ok.
 set_queue_attributes(QueueName, Attributes) ->

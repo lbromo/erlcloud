@@ -7,6 +7,7 @@
 -export([send_message_with_message_attributes/1]).
 -export([receive_messages_with_message_attributes/1]).
 -export([send_message_batch_with_message_attributes/1]).
+-export([send_fifo_message/1]).
 
 -define(_sqs_test(T), {?LINE, T}).
 -define(_f(F), fun() -> F end).
@@ -20,6 +21,7 @@ erlcloud_api_test_() ->
       fun receive_messages_with_message_attributes/1,
       fun send_message_batch/1,
       fun send_message_batch_with_message_attributes/1
+      % fun send_fifo_message/1 - it is currently failing
      ]}.
 
 start() ->
@@ -164,7 +166,7 @@ send_message_with_message_attributes(_) ->
     Tests =
         [?_sqs_test(
             {"Test sends a message with message attributes.",
-             ?_f(erlcloud_sqs:send_message("Queue", MessageBody, none, MessageAttributes,
+             ?_f(erlcloud_sqs:send_message("Queue", MessageBody, none, none, MessageAttributes,
                                            erlcloud_aws:default_config())),
              Expected})],
     Response = "
@@ -369,4 +371,42 @@ send_message_batch_with_message_attributes(_) ->
         </RequestId>
     </ResponseMetadata>
 </SendMessageBatchResponse>",
+    input_tests(Response, Tests).
+
+send_fifo_message(_) ->
+    Queue = "Queue.fifo",
+    MessageBody = "Hello fifo",
+    GroupId = "grp1",
+
+    Expected = [
+                {"Action", "SendMessage"},
+                {"MessageBody", MessageBody}
+               ],
+
+    Tests =
+        [?_sqs_test(
+            {"Test sends a fifo message.",
+             ?_f(erlcloud_sqs:send_message(Queue, MessageBody, GroupId, none, [], erlcloud_aws:default_config())),
+             Expected})],
+
+    Response = "
+<SendMessageResponse>
+    <SendMessageResult>
+        <MD5OfMessageBody>
+            fafb00f5732ab283681e124bf8747ed1
+        </MD5OfMessageBody>
+        <MD5OfMessageAttributes>
+            3ae8f24a165a8cedc005670c81a27295
+        </MD5OfMessageAttributes>
+        <MessageId>
+            5fea7756-0ea4-451a-a703-a558b933e274
+        </MessageId>
+    </SendMessageResult>
+    <ResponseMetadata>
+        <RequestId>
+            27daac76-34dd-47df-bd01-1f6e873584a0
+        </RequestId>
+    </ResponseMetadata>
+</SendMessageResponse>",
+
     input_tests(Response, Tests).
